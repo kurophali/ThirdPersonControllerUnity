@@ -12,7 +12,9 @@ public class PlayerController : MonoBehaviour
     IGameplayEntity mCharacterInstance;
 
     PlayerInput mPlayerInput;
-    InputAction mMovements, mJump;
+    InputAction mDirectionalInputAction, mJump;
+
+    Vector2 mDirectionalInput;
 
     // Start is called before the first frame update
     void Start()
@@ -22,26 +24,30 @@ public class PlayerController : MonoBehaviour
         vCamThirdPerson.Follow = mCharacterInstance.transform;
 
         mPlayerInput = GetComponent<PlayerInput>();
-        mMovements = mPlayerInput.actions["movement"];
+        mDirectionalInputAction = mPlayerInput.actions["movement"];
         mJump = mPlayerInput.actions["jump"];
         mJump.performed += _ => Jump();
     }
 
     void Jump()
     {
-        mCharacterInstance.TriggerAbility(1, new Vector4(0,0,0,0));
+        Vector2 directionalInput = mDirectionalInput;
+        Vector3 verticalInput = Camera.main.transform.forward * mDirectionalInput.y;
+        verticalInput.y = 0;
+        Vector3 horizontalInput = Camera.main.transform.right * mDirectionalInput.x;
+        horizontalInput.y = 0;
+        Vector3 directionInput = verticalInput + horizontalInput;
+        mCharacterInstance.TriggerAbility(1, new Vector4(directionInput.x, directionInput.y, directionInput.z, 0));
     }
 
     private void Update()
     {
-        Vector2 movementInput = mMovements.ReadValue<Vector2>();
-        Vector3 verticalInput = Camera.main.transform.forward * movementInput.y;
+        mDirectionalInput = mDirectionalInputAction.ReadValue<Vector2>();
+        Vector3 verticalInput = Camera.main.transform.forward * mDirectionalInput.y;
         verticalInput.y = 0;
-        Vector3 horizontalInput = Camera.main.transform.right * movementInput.x;
+        Vector3 horizontalInput = Camera.main.transform.right * mDirectionalInput.x;
         horizontalInput.y = 0;
         Vector3 directionInput = verticalInput + horizontalInput;
-        mCharacterInstance.TriggerAbility(0, new Vector4(directionInput.x, directionInput.y, directionInput.z, 0));
-    
-        
+        mCharacterInstance.TriggerAbility(0, new Vector4(directionInput.x, directionInput.y, directionInput.z, 0));        
     }
 }

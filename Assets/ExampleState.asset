@@ -16,3 +16,4 @@ MonoBehaviour:
   mJumpVelocity: 70
   mGravity: 10
   mGroundCheckRaycastLength: 1.1
+  mWallrunDetectionDist: 1.11
