@@ -12,13 +12,13 @@ public class IGameplayState : ScriptableObject
     [SerializeField] float mJumpVelocity;
     [SerializeField] float mGravity;
     [SerializeField] float mGroundCheckRaycastLength;
-    [SerializeField] float mWallrunDetectionDist;
+    [SerializeField] float mMaxDistForWallDetection;
 
     // Values for storing states or temps
     Rigidbody mRigidbody;
     CapsuleCollider mCollider;
     float mInitialDrag;
-    bool mAllowWallCheck;
+    bool mTagAllowWallcheck;
     IGameplayEntity mGameplayEntity; // ??? Should I merge IGS into IGE?
 
     // Environment live updates
@@ -26,7 +26,7 @@ public class IGameplayState : ScriptableObject
     public RaycastHit mWallCheckHit { get; private set; }
     // Player tags
     [SerializeField] public bool mTagGrounded { get; private set; }
-    public bool mStickToWall { get; private set; }
+    public bool mTagAttachedToWall { get; private set; }
 
     public void OnStartInit(IGameplayEntity gameplayEntity)
     {
@@ -37,18 +37,23 @@ public class IGameplayState : ScriptableObject
         mInitialDrag = mRigidbody.drag;
         mRigidbody.freezeRotation = true;
         mTagGrounded = false;
-        mAllowWallCheck = true;
+        mTagAllowWallcheck = true;
     }
 
     IEnumerator WaitForSeconds(float time)
     {
         yield return new WaitForSeconds(time);
-        mAllowWallCheck = true;
+        mTagAllowWallcheck = true;
     }
 
     public void TurnOffWallCheck(float durationInSeconds)
     {
-        mAllowWallCheck = false;
+        mTagAllowWallcheck = false;
+        if (mTagAttachedToWall)
+        {
+            mTagAttachedToWall = false;
+            OnDetachWall();
+        }
         mGameplayEntity.StartCoroutine(WaitForSeconds(durationInSeconds));
     }
 
@@ -75,23 +80,21 @@ public class IGameplayState : ScriptableObject
             }
         }
 
-        Debug.Log(mStickToWall);
+        //Debug.Log(mStickToWall);
         if (mTagGrounded)
         {
             // Apply "gravity" to the object to have it stick to the surface
             //mRigidbody.AddForce(-groundHit.normal * mRigidbody.mass * mGravity);
         }
-        else if(!mStickToWall) // no gravity if sticked to wall
+        else if(!mTagAttachedToWall) // no gravity if sticked to wall
         {
             // Apply real gravity
             mRigidbody.AddForce(Vector3.down * mRigidbody.mass * mGravity);
         }
-        //Debug.Log(groundedThisFrame);
         #endregion
 
-
         #region WALLCHECK
-        if (!mTagGrounded && mAllowWallCheck)
+        if (!mTagGrounded && mTagAllowWallcheck)
         {
             RaycastHit frontDetection, backDetection, leftDetection, rightDetection;
             float frontCollisionDist = 0, backCollisionDist = 0, leftCollisionDist = 0, rightCollisionDist = 0;
@@ -99,63 +102,104 @@ public class IGameplayState : ScriptableObject
             bool hitBack = Physics.Raycast(mRigidbody.transform.position, -mRigidbody.transform.forward, out backDetection);
             bool hitRight = Physics.Raycast(mRigidbody.transform.position, mRigidbody.transform.right, out rightDetection);
             bool hitLeft = Physics.Raycast(mRigidbody.transform.position, -mRigidbody.transform.right, out leftDetection);
-            float closestDistanceToWall = 10;
+            float closestDistanceToWall = mMaxDistForWallDetection;
 
             if (hitFront)
             {
-                frontCollisionDist = Vector3.Magnitude(mRigidbody.transform.position - frontDetection.point);
-                if (frontCollisionDist < closestDistanceToWall)
+                Vector3 objectToHitpoint = frontDetection.point - mRigidbody.transform.position;
+                frontCollisionDist = Vector3.Magnitude(objectToHitpoint);
+
+                // Get the actual distance from wall from this hitpoint
+                Vector3 normal = frontDetection.normal;
+                float cosine = Vector3.Dot(objectToHitpoint, -normal);
+                float distToWall = cosine * frontCollisionDist;
+                if (distToWall < closestDistanceToWall)
                 {
-                    closestDistanceToWall = frontCollisionDist;
+                    closestDistanceToWall = distToWall;
                     mWallCheckHit = frontDetection;
                 }
             }
             if (hitBack)
             {
-                backCollisionDist = Vector3.Magnitude(mRigidbody.transform.position - backDetection.point);
-                if (backCollisionDist < closestDistanceToWall) 
-                { 
-                    closestDistanceToWall = backCollisionDist;
+                Vector3 objectToHitpoint = backDetection.point - mRigidbody.transform.position;
+                backCollisionDist = Vector3.Magnitude(objectToHitpoint);
+
+                // Get the actual distance from wall from this hitpoint
+                Vector3 normal = backDetection.normal;
+                float cosine = Vector3.Dot(objectToHitpoint, -normal);
+                float distToWall = cosine * backCollisionDist;
+                if (distToWall < closestDistanceToWall)
+                {
+                    closestDistanceToWall = distToWall;
                     mWallCheckHit = backDetection;
                 }
             }
             if (hitLeft)
             {
-                leftCollisionDist = Vector3.Magnitude(mRigidbody.transform.position - leftDetection.point);
-                if (leftCollisionDist < closestDistanceToWall) 
+                Vector3 objectToHitpoint = leftDetection.point - mRigidbody.transform.position;
+                leftCollisionDist = Vector3.Magnitude(objectToHitpoint);
+
+                // Get the actual distance from wall from this hitpoint
+                Vector3 normal = leftDetection.normal;
+                float cosine = Vector3.Dot(objectToHitpoint, -normal);
+                float distToWall = cosine * leftCollisionDist;
+                if (distToWall < closestDistanceToWall)
                 {
-                    closestDistanceToWall = leftCollisionDist;
+                    closestDistanceToWall = distToWall;
                     mWallCheckHit = leftDetection;
                 }
             }
             if (hitRight)
             {
-                rightCollisionDist = Vector3.Magnitude(mRigidbody.transform.position - rightDetection.point);
-                if (rightCollisionDist < closestDistanceToWall) 
+                Vector3 objectToHitpoint = rightDetection.point - mRigidbody.transform.position;
+                rightCollisionDist = Vector3.Magnitude(objectToHitpoint);
+
+                // Get the actual distance from wall from this hitpoint
+                Vector3 normal = rightDetection.normal;
+                float cosine = Vector3.Dot(objectToHitpoint, -normal);
+                float distToWall = cosine * rightCollisionDist;
+                if (distToWall < closestDistanceToWall)
                 {
-                    closestDistanceToWall = rightCollisionDist;
-                    mWallCheckHit = leftDetection;
+                    closestDistanceToWall = distToWall;
+                    mWallCheckHit = rightDetection;
                 }
             }
 
-            //mStickToWall = closestDistanceToWall < mWallrunDetectionDist;
-            bool stickedThisFrame = closestDistanceToWall < mWallrunDetectionDist;
-            if(mStickToWall != stickedThisFrame)
+            bool attachedOnFrame = closestDistanceToWall < mMaxDistForWallDetection;
+
+            if (!mTagAttachedToWall && attachedOnFrame) // Just attached to wall
             {
-                mStickToWall = stickedThisFrame;
-                if (mStickToWall)
-                {
-                    OnStickToWall(mWallCheckHit);
-                }
-                else
-                {
-                    OnUnstickFromWall();
-                }
+                OnAttachWall(mWallCheckHit);
+                mTagAttachedToWall = attachedOnFrame;
             }
+
+            //if(mTagAttachedToWall != stickedThisFrame)
+            //{
+            //    mTagAttachedToWall = stickedThisFrame;
+            //    if (mTagAttachedToWall)
+            //    {
+            //        OnAttachWall(mWallCheckHit);
+            //    }
+            //    else
+            //    {
+            //        OnDetachWall();
+            //    }
+            //}
         }
         else
         {
-            mStickToWall = false;
+            mTagAttachedToWall = false;
+        }
+
+        // State management for FSM???
+        if(mTagAttachedToWall)
+        {
+            // Some states that will exit this state
+            if (!mTagAllowWallcheck || mTagGrounded) 
+            {
+                mTagAttachedToWall = false;
+                OnDetachWall();
+            }
         }
         #endregion
 
@@ -163,8 +207,10 @@ public class IGameplayState : ScriptableObject
     }
 
     public event Action<RaycastHit> onStickToWall;
-    public void OnStickToWall(RaycastHit wallDetection)
+    public void OnAttachWall(RaycastHit wallDetection)
     {
+        Debug.Log("OnAttachWall");
+
         mRigidbody.velocity = Vector3.zero;
         mRigidbody.drag = mInitialDrag;
         mRigidbody.useGravity = false;
@@ -172,9 +218,11 @@ public class IGameplayState : ScriptableObject
         if (onStickToWall != null) onStickToWall(wallDetection);
     }
 
-    public void OnUnstickFromWall()
+    public void OnDetachWall()
     {
+        Debug.Log("OnDetachWall");
         mRigidbody.drag = 0;
+        TurnOffWallCheck(0.5f);
     }
 
     public event Action<RaycastHit> onStartLanding;
